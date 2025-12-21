@@ -1,0 +1,5 @@
+{
+  "name": "芯匣 (ChipBox)",
+  "description": "一个极简、安全的本地账号密码管理器。完全离线，支持数据导入导出与密码生成。",
+  "requestFramePermissions": []
+}
