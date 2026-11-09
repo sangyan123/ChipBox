@@ -4,6 +4,7 @@ import { Download, Upload, Trash2, Lock, KeyRound, RotateCcw, ChevronDown, Palet
 import * as Storage from '../services/storageService';
 import { addCustomCategory, getCustomCategories, removeCustomCategory } from '../services/categoryService';
 import { getThemeChoice, setThemeChoice, ThemeChoice } from '../utils/theme';
+import * as biometricService from '../services/biometricService';
 import { Account } from '../types';
 
 const SettingsScreen: React.FC = () => {
@@ -20,9 +21,12 @@ const SettingsScreen: React.FC = () => {
   const [trash, setTrash] = useState<Account[]>([]);
   const [catsOpen, setCatsOpen] = useState(false);
   const [customCategories, setCustomCategories] = useState<string[]>(() => getCustomCategories());
+  const [bioOn, setBioOn] = useState(() => Storage.getBiometricEnabled());
+  const [bioSupported, setBioSupported] = useState(false);
 
   const loadTrash = () => Storage.getDeletedAccounts().then(setTrash);
   useEffect(() => { loadTrash(); }, []);
+  useEffect(() => { void (async () => setBioSupported(await biometricService.isSupported()))(); }, []);
 
   const handleExport = async () => {
     const data = await Storage.exportData();
@@ -52,8 +56,17 @@ const SettingsScreen: React.FC = () => {
     setCpMsg('');
     if (cpNew1.length < 4) return setCpMsg('新密码至少4位');
     if (cpNew1 !== cpNew2) return setCpMsg('两次输入的新密码不一致');
-    const ok = await Storage.changePin(cpCur, cpNew1);
-    if (ok) {
+    const newBits = await Storage.changePin(cpCur, cpNew1);
+    if (newBits) {
+      if (Storage.getBiometricEnabled()) {
+        try {
+          await biometricService.enable(newBits);
+        } catch {
+          await biometricService.disable();
+          setBioOn(false);
+          window.alert('访问密码已修改，但生物识别凭证同步失败，已自动关闭生物识别');
+        }
+      }
       setCpMsg('');
       setCpOpen(false);
       setCpCur('');
@@ -65,14 +78,37 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleToggleBiometric = async () => {
+    try {
+      if (bioOn) {
+        await biometricService.disable();
+        setBioOn(false);
+        window.alert('生物识别解锁已关闭');
+        return;
+      }
+      const pin = window.prompt('输入当前访问密码以启用生物识别');
+      if (!pin) return;
+      const ok = await Storage.verifyPin(pin);
+      if (!ok) { window.alert('密码错误'); return; }
+      const bits = await Storage.deriveKeyBits(pin);
+      if (!bits) { window.alert('启用失败'); return; }
+      await biometricService.enable(bits);
+      setBioOn(true);
+      window.alert('生物识别解锁已开启，锁定后可用指纹/面容快速解锁');
+    } catch {
+      window.alert('操作未完成（可能取消了生物识别验证）');
+    }
+  };
+
   const handleLock = () => {
     Storage.lock();
     navigate('/', { replace: true });
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!window.confirm('确定清空全部数据？\n所有账号和访问密码将被永久删除，无法恢复！')) return;
     Storage.clearAllData();
+    await biometricService.disable();
     window.location.reload();
   };
 
@@ -161,6 +197,19 @@ const SettingsScreen: React.FC = () => {
               <option value={0}>不自动锁定</option>
             </select>
           </div>
+          <div className="p-4 flex justify-between items-center text-sm">
+            <span className="text-slate-700 dark:text-slate-200">生物识别解锁（指纹/面容）</span>
+            <button
+              onClick={handleToggleBiometric}
+              disabled={!bioSupported}
+              className={bioOn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${bioOn ? 'left-6' : 'left-0.5'}`} />
+            </button>
+          </div>
+          {!bioSupported && (
+            <p className="px-4 pb-3 text-[10px] text-slate-400 dark:text-slate-500">当前设备不支持或未录入生物识别</p>
+          )}
           <button onClick={handleLock} className="w-full p-4 flex justify-between items-center text-sm">
             <span className="text-slate-700 dark:text-slate-200">立即锁定</span>
             <Lock className="w-4 h-4 text-slate-500" />
@@ -252,5 +301,7 @@ const SettingsScreen: React.FC = () => {
 };
 
 export default SettingsScreen;
+
+
 
 

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, ChevronLeft } from 'lucide-react';
+import { Shield, ChevronLeft, Fingerprint } from 'lucide-react';
 import * as Storage from '../services/storageService';
+import * as biometricService from '../services/biometricService';
 
 type LoginMode = 'setup' | 'confirm' | 'unlock';
 
@@ -11,12 +12,45 @@ const LoginScreen: React.FC = () => {
   const [firstPin, setFirstPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [bioReady, setBioReady] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (Storage.isSetupNeeded()) setMode('setup');
   }, []);
 
+  // 已启用生物识别且设备支持时，显示指纹快捷解锁按钮
+  useEffect(() => {
+    void (async () => {
+      const supported = await biometricService.isSupported();
+      setBioReady(supported && Storage.getBiometricEnabled());
+    })();
+  }, []);
+
+  const handleBiometric = async () => {
+    if (busy) return;
+    setError('');
+    setBusy(true);
+    try {
+      const bits = await biometricService.retrieveKeyBits();
+      if (!bits) {
+        setError('生物识别未完成或已失效，请使用密码进入后在设置中重新启用');
+        await biometricService.disable();
+        setBioReady(false);
+        return;
+      }
+      const ok = await Storage.unlockWithKeyBits(bits);
+      if (ok) {
+        navigate('/home');
+      } else {
+        setError('生物识别凭证失效，请使用密码进入后在设置中重新启用');
+        await biometricService.disable();
+        setBioReady(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
   const title = mode === 'setup'
     ? '请设置访问密码（4-8位）'
     : mode === 'confirm'
@@ -145,8 +179,19 @@ const LoginScreen: React.FC = () => {
       >
         {busy ? '处理中...' : mode === 'setup' ? '下一步' : mode === 'confirm' ? '确认并创建' : '进入应用'}
       </button>
-    </div>
+
+      {bioReady && (
+        <button
+          onClick={handleBiometric}
+          disabled={busy}
+          title="生物识别快捷解锁"
+          className="mt-4 w-12 h-12 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center active:bg-slate-100 dark:active:bg-slate-700 mx-auto"
+        >
+          <Fingerprint className="w-6 h-6" />
+        </button>
+      )}    </div>
   );
 };
 
 export default LoginScreen;
+

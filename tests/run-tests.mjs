@@ -78,10 +78,21 @@ await S.clearTrash();
 ok((await S.getDeletedAccounts()).length === 0, 'clear trash works');
 ok((await S.getAccounts()).length === 0, 'active list empty after trash cleared');
 
+// 10.5 密钥材料解锁（生物识别底层机制）
+const bioBits = await S.deriveKeyBits('1234');
+ok(bioBits !== null && bioBits.length === 32, 'deriveKeyBits returns 32 bytes');
+S.lock();
+ok(await S.unlockWithKeyBits(bioBits) === true, 'unlock with stored key bits works');
+S.lock();
+const wrongBits = new Uint8Array(32);
+ok(await S.unlockWithKeyBits(wrongBits) === false, 'wrong key bits rejected');
+ok(await S.unlock('1234') === true, 'PIN still works');
+
 // 11. 修改 PIN（无数据状态也安全）
 await S.saveAccount({ id: '9', title: 'X', category: '其他', updatedAt: 9 });
-ok(await S.changePin('0000', '5678') === false, 'changePin rejects wrong current PIN');
-ok(await S.changePin('1234', '5678') === true, 'changePin succeeds');
+ok((await S.changePin('0000', '5678')) === null, 'changePin rejects wrong current PIN');
+const cpBits = await S.changePin('1234', '5678');
+ok(cpBits !== null && cpBits.length === 32, 'changePin succeeds and returns new bits');
 S.lock();
 ok(await S.unlock('1234') === false, 'old PIN rejected');
 ok(await S.unlock('5678') === true, 'new PIN works');
@@ -94,3 +105,5 @@ ok(await S.unlock('5678') === false, 'unlock fails after clearAll');
 
 console.log(`\nRESULT: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
+
+

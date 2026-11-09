@@ -114,7 +114,7 @@ export const isSetupNeeded = (): boolean => readSettings() === null;
 export const hasLegacyData = (): boolean => !!localStorage.getItem(KEYS.LEGACY_ACCOUNTS);
 
 // ---------- 首次设置 PIN ----------
-export const setupPin = async (pin: string): Promise<void> => {
+export const setupPin = async (pin: string): Promise<Uint8Array> => {
   assertCrypto();
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const bits = await deriveBits(pin, salt, KDF_ITERATIONS);
@@ -139,6 +139,7 @@ export const setupPin = async (pin: string): Promise<void> => {
   }
 
   masterKey = key;
+  return bits;
 };
 
 // ---------- 解锁 / 验证 ----------
@@ -160,10 +161,10 @@ const tryUnlock = async (pin: string, setKey: boolean): Promise<boolean> => {
 export const unlock = async (pin: string): Promise<boolean> => tryUnlock(pin, true);
 export const verifyPin = async (pin: string): Promise<boolean> => tryUnlock(pin, false);
 
-export const changePin = async (currentPin: string, newPin: string): Promise<boolean> => {
-  if (!masterKey) return false;
+export const changePin = async (currentPin: string, newPin: string): Promise<Uint8Array | null> => {
+  if (!masterKey) return null;
   const ok = await verifyPin(currentPin);
-  if (!ok) return false;
+  if (!ok) return null;
   const accounts = await readVault();
   const prev = readSettings();
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -178,7 +179,7 @@ export const changePin = async (currentPin: string, newPin: string): Promise<boo
   });
   await writeVault(newKey, accounts);
   masterKey = newKey;
-  return true;
+  return newBits;
 };
 
 // ---------- 账号增删改查 ----------
@@ -258,6 +259,40 @@ export const clearTrash = async () => {
   await writeVault(masterKey, accounts);
 };
 
+// ---------- 生物识别支持 ----------
+// 用 PIN 派生原始密钥材料（用于寄存到系统安全硬件，如 Android Keystore）
+export const deriveKeyBits = async (pin: string): Promise<Uint8Array | null> => {
+  const settings = readSettings();
+  if (!settings) return null;
+  try {
+    return await deriveBits(pin, fromBase64(settings.kdf.salt), settings.kdf.iterations);
+  } catch {
+    return null;
+  }
+};
+
+// 用寄存的密钥材料解锁（生物识别取回后调用）
+export const unlockWithKeyBits = async (bits: Uint8Array): Promise<boolean> => {
+  const settings = readSettings();
+  if (!settings) return false;
+  try {
+    const key = await importAesKey(bits);
+    const msg = await aesDecrypt(key, settings.pinCheck.iv, settings.pinCheck.data);
+    if (msg !== PIN_CHECK_MESSAGE) return false;
+    masterKey = key;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const getBiometricEnabled = (): boolean => readSettings()?.biometricEnabled ?? false;
+
+export const saveBiometricEnabled = (v: boolean) => {
+  const s = readSettings();
+  if (s) saveSettings({ ...s, biometricEnabled: v });
+};
+
 // ---------- 备份 ----------
 export const exportData = async (): Promise<string> => {
   const data = {
@@ -288,3 +323,4 @@ export const clearAllData = () => {
   localStorage.removeItem(KEYS.LEGACY_ACCOUNTS);
   masterKey = null;
 };
+
