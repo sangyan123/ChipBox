@@ -2,65 +2,85 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![React](https://img.shields.io/badge/React-19-blue.svg)
-![Vite](https://img.shields.io/badge/Vite-Modern-646CFF.svg)
+![Android](https://img.shields.io/badge/Android-Capacitor%207-green.svg)
 
-**芯匣 (ChipBox)** 是一款专为移动端设计的单机极简账号密码存储应用。它完全运行在浏览器本地，不上传任何数据到服务器，确保您的隐私安全。
+**芯匣 (ChipBox)** 是一款专为移动端设计的单机极简账号密码存储应用。数据经 **AES-256-GCM** 加密后仅保存在本地，不上传任何服务器。
 
 ## ✨ 功能特点
 
-- 📱 **移动端优先**：针对刘海屏、状态栏、底部手势操作进行了深度 UI 适配。
-- 🔒 **全本地存储**：数据仅存储在浏览器的 `LocalStorage` 中，无需联网。
-- 🛡️ **访问锁定**：设置独立的 PIN 码，保护您的敏感信息不被窥视。
-- 🎲 **强密码生成**：内置可自定义规则的强密码生成器。
-- 📂 **分类管理**：支持社交、银行、办公等多种预设分类。
-- 📤 **备份与导出**：支持 JSON 格式的数据导出备份及一键重置。
+- 🔐 **加密存储**：账号数据经 AES-256-GCM 加密落盘，访问密码（PIN）通过 PBKDF2-SHA256（310000 次迭代 + 随机盐）派生密钥
+- 🔒 **锁屏保护**：PIN 解锁、自动锁定（1/5/10/30 分钟可配）、手动立即锁定
+- 🎲 **强密码生成**：加密安全随机数（CSPRNG），可调长度/字符类型，带强度指示
+- 📂 **分类管理**：预设分类 + 自定义分类
+- ⭐ **收藏置顶 + 多种排序**；🔍 搜索标题/账号/备注
+- 🗑️ **回收站**：删除先入回收站，可恢复或彻底删除
+- 📤 **备份导出/导入**：JSON 格式，兼容旧版本备份
+- 🌓 **深色模式**：跟随系统或手动切换
+- 📱 **移动端适配**：刘海屏、手势条、Android 15+ 状态栏避让
+- 🌐 **PWA**：Web 版可安装到主屏幕离线使用
 
 ## 🛠️ 技术栈
 
-- **框架**: [React 19](https://react.dev/)
-- **构建**: [Vite](https://vitejs.dev/)
-- **语言**: [TypeScript](https://www.typescriptlang.org/)
-- **样式**: [Tailwind CSS](https://tailwindcss.com/)
-- **图标**: [Lucide React](https://lucide.dev/)
-- **路由**: [React Router 7](https://reactrouter.com/)
+React 19 · TypeScript · Vite 6 · Tailwind CSS · Capacitor 7（Android）· WebCrypto
 
 ## 🚀 快速开始
 
-### 1. 克隆项目
 ```bash
-git clone https://github.com/your-username/chipbox.git
+git clone https://github.com/sangyan123/ChipBox.git
 cd chipbox
-```
-
-### 2. 安装依赖
-```bash
 npm install
+npm run dev      # 本地开发 http://localhost:3000
+npm test         # 存储加密/回收站等功能测试（30 项）
+npm run build    # 生产构建（Web 版，输出 dist/）
 ```
 
-### 3. 本地开发
-```bash
-npm run dev
-```
+## 📱 构建 Android APK
 
-### 4. 生产构建
+要求：JDK 21（Capacitor 7 需要）、Android SDK（platform 36 + build-tools 36）
+
 ```bash
 npm run build
+npx cap sync android
+cd android
+./gradlew assembleDebug    # 输出 app-debug.apk
+./gradlew assembleRelease  # 输出已签名 app-release.apk（需先配置签名）
 ```
-构建后的文件将生成在 `dist` 目录中。
 
-## 📦 部署建议
+### 正式签名（可选）
 
-由于本项目是纯静态应用，您可以轻松部署到以下平台：
-- **GitHub Pages**
-- **Vercel**
-- **Netlify**
-- **Cloudflare Pages**
+签名密钥不提交到仓库。在 `android/` 下创建 `keystore.properties`：
 
-## ⚠️ 安全警告
+```properties
+storeFile=chipbox-release.jks
+storePassword=你的密码
+keyAlias=chipbox
+keyPassword=你的密码
+```
 
-1. **非加密存储**：当前版本主要用于学习和日常非敏感账号管理，使用的是 `LocalStorage`。请注意，清除浏览器缓存或更换设备会导致数据丢失，**请务必定期导出 JSON 备份**。
-2. **简单验证**：访问密码（PIN）采用简单哈希验证，建议仅作为防窥手段使用。
+生成密钥库：
+
+```bash
+keytool -genkeypair -v -keystore chipbox-release.jks -alias chipbox \
+  -keyalg RSA -keysize 2048 -validity 10950
+```
+
+> ⚠️ `keystore.properties` 和 `.jks` 已在 .gitignore 中排除，**请务必自行备份**——丢失后无法对同一应用发布更新。
+
+## 🤖 CI
+
+推送到 `main` 或打 `v*` 标签时，GitHub Actions 自动执行测试 + 构建 APK；打标签会自动创建 Release 并附上 APK。
+
+## 📦 部署
+
+Web 版为纯静态应用，`dist/` 可部署到 GitHub Pages / Vercel / Netlify / Cloudflare Pages。
+
+## ⚠️ 安全说明
+
+1. 访问密码**遗忘后数据无法恢复**（真加密的固有代价），请牢记 PIN 并定期导出备份
+2. 备份文件为明文 JSON，请妥善保管
+3. 复制的密码 30 秒后自动清除剪贴板
+4. 本项目用于学习与日常非敏感账号管理
 
 ## 📜 开源协议
 
-本项目采用 [MIT License](LICENSE) 开源协议。
+[MIT](LICENSE)

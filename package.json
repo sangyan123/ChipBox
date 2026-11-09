@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "esbuild services/storageService.ts --bundle --format=esm --outfile=tests/storage.test.mjs --log-level=error && node tests/run-tests.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.10",

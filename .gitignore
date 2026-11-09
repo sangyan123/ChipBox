@@ -37,3 +37,12 @@ android/local.properties
 android/capacitor-cordova-android-plugins/
 android/app/src/main/assets/public/
 android/app/src/main/assets/capacitor.config.json
+
+# test bundle artifact
+tests/storage.test.mjs
+
+# release signing (never commit)
+android/keystore.properties
+android/*.jks
+
+ChipBox-*.apk

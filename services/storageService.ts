@@ -1,12 +1,12 @@
 import { Account, AppSettings, VaultEnvelope } from '../types';
 
 const KEYS = {
-  LEGACY_ACCOUNTS: 'chipbox_accounts', // 旧版明文数据（仅用于一次性迁移）
-  VAULT: 'chipbox_vault',              // 加密后的账号保险箱
+  LEGACY_ACCOUNTS: 'chipbox_accounts',
+  VAULT: 'chipbox_vault',
   SETTINGS: 'chipbox_settings',
 };
 
-const KDF_ITERATIONS = 310000; // OWASP 推荐的 PBKDF2-SHA256 迭代次数
+const KDF_ITERATIONS = 310000;
 const PIN_CHECK_MESSAGE = 'chipbox-vault-ok';
 const VAULT_VERSION = 1;
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
@@ -14,7 +14,7 @@ const DEFAULT_AUTO_LOCK_MINUTES = 5;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-// ---------- base64 工具 ----------
+// ---------- base64 ----------
 const toBase64 = (bytes: Uint8Array): string => {
   let binary = '';
   bytes.forEach((b) => { binary += String.fromCharCode(b); });
@@ -35,20 +35,28 @@ const assertCrypto = () => {
 };
 
 // ---------- 核心加密 ----------
-// PBKDF2-SHA256 从 PIN 派生 AES-256-GCM 密钥（不可导出，仅存在内存中）
-const deriveKey = async (pin: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> => {
+const deriveBits = async (pin: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> => {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    textEncoder.encode(pin),
+    textEncoder.encode(pin) as unknown as BufferSource,
     'PBKDF2',
     false,
-    ['deriveKey']
+    ['deriveBits']
   );
-  return crypto.subtle.deriveKey(
+  const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations, hash: 'SHA-256' },
     keyMaterial,
+    256
+  );
+  return new Uint8Array(bits);
+};
+
+const importAesKey = async (bits: Uint8Array): Promise<CryptoKey> => {
+  return crypto.subtle.importKey(
+    'raw',
+    bits as unknown as BufferSource,
     { name: 'AES-GCM', length: 256 },
-    false, // extractable: false，密钥无法被导出
+    false,
     ['encrypt', 'decrypt']
   );
 };
@@ -58,7 +66,7 @@ const aesEncrypt = async (key: CryptoKey, plaintext: string): Promise<{ iv: stri
   const cipher = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv as unknown as BufferSource },
     key,
-    textEncoder.encode(plaintext)
+    textEncoder.encode(plaintext) as unknown as BufferSource
   );
   return { iv: toBase64(iv), data: toBase64(new Uint8Array(cipher)) };
 };
@@ -72,11 +80,10 @@ const aesDecrypt = async (key: CryptoKey, ivB64: string, dataB64: string): Promi
   return textDecoder.decode(plain);
 };
 
-// ---------- 会话状态（内存密钥，刷新页面即失效） ----------
+// ---------- 会话状态 ----------
 let masterKey: CryptoKey | null = null;
 
 export const isUnlocked = (): boolean => masterKey !== null;
-
 export const lock = (): void => { masterKey = null; };
 
 // ---------- 设置 ----------
@@ -85,7 +92,6 @@ const readSettings = (): AppSettings | null => {
     const raw = localStorage.getItem(KEYS.SETTINGS);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    // 校验新格式；旧版 simpleHash 设置会被视为不存在，走重新设置流程
     if (s && s.kdf && s.pinCheck && typeof s.kdf.iterations === 'number') return s as AppSettings;
     return null;
   } catch {
@@ -104,16 +110,15 @@ export const saveAutoLockTime = (minutes: number) => {
   if (s) saveSettings({ ...s, autoLockTime: minutes });
 };
 
-// 是否需要初始化（全新安装，或检测到旧版明文数据需要迁移）
 export const isSetupNeeded = (): boolean => readSettings() === null;
-
 export const hasLegacyData = (): boolean => !!localStorage.getItem(KEYS.LEGACY_ACCOUNTS);
 
-// ---------- 首次设置 PIN（自动迁移旧明文数据） ----------
+// ---------- 首次设置 PIN ----------
 export const setupPin = async (pin: string): Promise<void> => {
   assertCrypto();
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await deriveKey(pin, salt, KDF_ITERATIONS);
+  const bits = await deriveBits(pin, salt, KDF_ITERATIONS);
+  const key = await importAesKey(bits);
   const pinCheck = await aesEncrypt(key, PIN_CHECK_MESSAGE);
   saveSettings({
     kdf: { iterations: KDF_ITERATIONS, salt: toBase64(salt) },
@@ -122,7 +127,6 @@ export const setupPin = async (pin: string): Promise<void> => {
     autoLockTime: DEFAULT_AUTO_LOCK_MINUTES,
   });
 
-  // 一次性迁移旧版明文账号到加密保险箱
   const legacy = localStorage.getItem(KEYS.LEGACY_ACCOUNTS);
   if (legacy) {
     try {
@@ -138,41 +142,33 @@ export const setupPin = async (pin: string): Promise<void> => {
 };
 
 // ---------- 解锁 / 验证 ----------
-export const unlock = async (pin: string): Promise<boolean> => {
+const tryUnlock = async (pin: string, setKey: boolean): Promise<boolean> => {
   const settings = readSettings();
   if (!settings) return false;
   try {
-    const key = await deriveKey(pin, fromBase64(settings.kdf.salt), settings.kdf.iterations);
+    const bits = await deriveBits(pin, fromBase64(settings.kdf.salt), settings.kdf.iterations);
+    const key = await importAesKey(bits);
     const msg = await aesDecrypt(key, settings.pinCheck.iv, settings.pinCheck.data);
     if (msg !== PIN_CHECK_MESSAGE) return false;
-    masterKey = key;
+    if (setKey) masterKey = key;
     return true;
-  } catch {
-    return false; // GCM 校验失败 = PIN 错误
-  }
-};
-
-export const verifyPin = async (pin: string): Promise<boolean> => {
-  const settings = readSettings();
-  if (!settings) return false;
-  try {
-    const key = await deriveKey(pin, fromBase64(settings.kdf.salt), settings.kdf.iterations);
-    const msg = await aesDecrypt(key, settings.pinCheck.iv, settings.pinCheck.data);
-    return msg === PIN_CHECK_MESSAGE;
   } catch {
     return false;
   }
 };
 
-// 修改 PIN：用新派生密钥重加密全部数据
+export const unlock = async (pin: string): Promise<boolean> => tryUnlock(pin, true);
+export const verifyPin = async (pin: string): Promise<boolean> => tryUnlock(pin, false);
+
 export const changePin = async (currentPin: string, newPin: string): Promise<boolean> => {
   if (!masterKey) return false;
   const ok = await verifyPin(currentPin);
   if (!ok) return false;
-  const accounts = await getAccounts();
+  const accounts = await readVault();
   const prev = readSettings();
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const newKey = await deriveKey(newPin, salt, KDF_ITERATIONS);
+  const newBits = await deriveBits(newPin, salt, KDF_ITERATIONS);
+  const newKey = await importAesKey(newBits);
   const pinCheck = await aesEncrypt(newKey, PIN_CHECK_MESSAGE);
   saveSettings({
     kdf: { iterations: KDF_ITERATIONS, salt: toBase64(salt) },
@@ -185,14 +181,14 @@ export const changePin = async (currentPin: string, newPin: string): Promise<boo
   return true;
 };
 
-// ---------- 账号增删改查（密文存取） ----------
+// ---------- 账号增删改查 ----------
 const writeVault = async (key: CryptoKey, accounts: Account[]) => {
   const env = await aesEncrypt(key, JSON.stringify(accounts));
   const envelope: VaultEnvelope = { v: VAULT_VERSION, iv: env.iv, data: env.data };
   localStorage.setItem(KEYS.VAULT, JSON.stringify(envelope));
 };
 
-export const getAccounts = async (): Promise<Account[]> => {
+const readVault = async (): Promise<Account[]> => {
   if (!masterKey) return [];
   const raw = localStorage.getItem(KEYS.VAULT);
   if (!raw) return [];
@@ -207,28 +203,65 @@ export const getAccounts = async (): Promise<Account[]> => {
   }
 };
 
+// 有效账号（不含回收站中的）
+export const getAccounts = async (): Promise<Account[]> =>
+  (await readVault()).filter((a) => !a.deletedAt);
+
+// 回收站中的账号
+export const getDeletedAccounts = async (): Promise<Account[]> =>
+  (await readVault()).filter((a) => !!a.deletedAt);
+
 export const saveAccount = async (account: Account) => {
   if (!masterKey) throw new Error('应用未解锁');
-  const accounts = await getAccounts();
+  const accounts = await readVault();
   const idx = accounts.findIndex((a) => a.id === account.id);
   if (idx >= 0) {
     accounts[idx] = account;
   } else {
-    accounts.unshift(account); // 新账号置顶
+    accounts.unshift(account);
   }
   await writeVault(masterKey, accounts);
 };
 
+// 软删除：移入回收站
 export const deleteAccount = async (id: string) => {
   if (!masterKey) throw new Error('应用未解锁');
-  const accounts = (await getAccounts()).filter((a) => a.id !== id);
+  const accounts = await readVault();
+  const idx = accounts.findIndex((a) => a.id === id);
+  if (idx >= 0) {
+    accounts[idx] = { ...accounts[idx], deletedAt: Date.now() };
+  }
   await writeVault(masterKey, accounts);
 };
 
-// ---------- 备份导入导出（备份文件保持明文 JSON 格式，用户可读） ----------
+export const restoreAccount = async (id: string) => {
+  if (!masterKey) throw new Error('应用未解锁');
+  const accounts = await readVault();
+  const idx = accounts.findIndex((a) => a.id === id);
+  if (idx >= 0) {
+    const { deletedAt: _removed, ...rest } = accounts[idx];
+    accounts[idx] = rest as Account;
+  }
+  await writeVault(masterKey, accounts);
+};
+
+// 彻底删除
+export const purgeAccount = async (id: string) => {
+  if (!masterKey) throw new Error('应用未解锁');
+  const accounts = (await readVault()).filter((a) => a.id !== id);
+  await writeVault(masterKey, accounts);
+};
+
+export const clearTrash = async () => {
+  if (!masterKey) throw new Error('应用未解锁');
+  const accounts = (await readVault()).filter((a) => !a.deletedAt);
+  await writeVault(masterKey, accounts);
+};
+
+// ---------- 备份 ----------
 export const exportData = async (): Promise<string> => {
   const data = {
-    accounts: await getAccounts(),
+    accounts: await getAccounts(), // 仅导出有效账号
     exportedAt: new Date().toISOString(),
     app: 'ChipBox',
   };

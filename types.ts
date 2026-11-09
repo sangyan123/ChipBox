@@ -6,11 +6,12 @@ export interface Account {
   category: string;
   note?: string;
   updatedAt: number;
+  favorite?: boolean;   // 收藏置顶
+  deletedAt?: number;   // 软删除时间（存在即表示在回收站中）
 }
 
-export const CATEGORIES = ['全部', '社交', '银行', '购物', '办公', '游戏', '邮箱', '其他'];
+export const DEFAULT_CATEGORIES = ['全部', '社交', '银行', '购物', '办公', '游戏', '邮箱', '其他'];
 
-// KDF 参数与 PIN 校验块（不含敏感数据，可明文存放于 LocalStorage）
 export interface KdfParams {
   iterations: number;
   salt: string; // base64
@@ -23,12 +24,11 @@ export interface EncryptedBlob {
 
 export interface AppSettings {
   kdf: KdfParams;
-  pinCheck: EncryptedBlob; // 用 PIN 派生密钥加密的校验串，用于验证 PIN 正确性
+  pinCheck: EncryptedBlob;
   biometricEnabled: boolean;
   autoLockTime: number; // 分钟，0 表示不自动锁定
 }
 
-// 加密保险箱信封（LocalStorage 中只存这个密文）
 export interface VaultEnvelope {
   v: number;
   iv: string;

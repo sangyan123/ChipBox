@@ -18,7 +18,7 @@ const BottomNav: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"
+    <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"
          style={{ paddingBottom: 'calc(4px + env(safe-area-inset-bottom))', height: 'calc(60px + env(safe-area-inset-bottom))' }}>
       {navItems.map((item) => {
         const isActive = location.pathname === item.path;
@@ -27,7 +27,7 @@ const BottomNav: React.FC = () => {
             key={item.path}
             onClick={() => navigate(item.path)}
             className={`flex flex-col items-center justify-center w-full h-full pt-2 ${
-              isActive ? 'text-blue-600' : 'text-gray-400'
+              isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'
             }`}
           >
             <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
