@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser',
+    minify: 'esbuild', // 使用 esbuild 压缩，无需额外安装 terser
     chunkSizeWarningLimit: 1600
   }
 });

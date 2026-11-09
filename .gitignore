@@ -26,3 +26,14 @@ dist-ssr/
 # OS files
 .DS_Store
 Thumbs.db
+# APK / build artifacts
+ChipBox-debug.apk
+
+# Capacitor Android (generated / machine-specific)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
