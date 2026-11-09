@@ -54,7 +54,7 @@ const SettingsScreen: React.FC = () => {
 
   const submitChangePin = async () => {
     setCpMsg('');
-    if (cpNew1.length < 4) return setCpMsg('新密码至少4位');
+    if (cpNew1.length !== 4) return setCpMsg('新密码必须为4位数字');
     if (cpNew1 !== cpNew2) return setCpMsg('两次输入的新密码不一致');
     const newBits = await Storage.changePin(cpCur, cpNew1);
     if (newBits) {
@@ -84,6 +84,10 @@ const SettingsScreen: React.FC = () => {
         await biometricService.disable();
         setBioOn(false);
         window.alert('生物识别解锁已关闭');
+        return;
+      }
+      if (!(await biometricService.isSupported())) {
+        window.alert('当前设备不支持生物识别或未录入指纹，请先到手机系统设置中录入指纹后再试');
         return;
       }
       const pin = window.prompt('输入当前访问密码以启用生物识别');
@@ -171,7 +175,7 @@ const SettingsScreen: React.FC = () => {
               <input type="password" inputMode="numeric" placeholder="当前密码" value={cpCur}
                 onChange={(e) => setCpCur(e.target.value)}
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-blue-500 dark:focus:border-blue-400 text-slate-800 dark:text-slate-100" />
-              <input type="password" inputMode="numeric" placeholder="新密码（4-8位）" value={cpNew1}
+              <input type="password" inputMode="numeric" placeholder="新密码（4位数字）" value={cpNew1}
                 onChange={(e) => setCpNew1(e.target.value)}
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-blue-500 dark:focus:border-blue-400 text-slate-800 dark:text-slate-100" />
               <input type="password" inputMode="numeric" placeholder="再次输入新密码" value={cpNew2}
@@ -201,14 +205,13 @@ const SettingsScreen: React.FC = () => {
             <span className="text-slate-700 dark:text-slate-200">生物识别解锁（指纹/面容）</span>
             <button
               onClick={handleToggleBiometric}
-              disabled={!bioSupported}
-              className={bioOn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}
+              className={`relative w-12 h-6 rounded-full transition-colors ${bioOn ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}`}
             >
               <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${bioOn ? 'left-6' : 'left-0.5'}`} />
             </button>
           </div>
           {!bioSupported && (
-            <p className="px-4 pb-3 text-[10px] text-slate-400 dark:text-slate-500">当前设备不支持或未录入生物识别</p>
+            <p className="px-4 pb-3 text-[10px] text-slate-400 dark:text-slate-500">未检测到指纹/面容，开启前请先在系统设置录入</p>
           )}
           <button onClick={handleLock} className="w-full p-4 flex justify-between items-center text-sm">
             <span className="text-slate-700 dark:text-slate-200">立即锁定</span>
@@ -301,6 +304,7 @@ const SettingsScreen: React.FC = () => {
 };
 
 export default SettingsScreen;
+
 
 
 

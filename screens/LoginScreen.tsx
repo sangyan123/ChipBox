@@ -52,14 +52,14 @@ const LoginScreen: React.FC = () => {
     }
   };
   const title = mode === 'setup'
-    ? '请设置访问密码（4-8位）'
+    ? '请设置4位访问密码'
     : mode === 'confirm'
       ? '请再次输入以确认'
       : '请输入访问密码';
 
   const handleNumClick = (num: string) => {
     if (busy) return;
-    if (pin.length < 8) setPin((prev) => prev + num);
+    if (pin.length < 4) setPin((prev) => prev + num);
     setError('');
   };
 
@@ -75,7 +75,7 @@ const LoginScreen: React.FC = () => {
     if (busy) return;
     setError('');
     if (mode === 'setup') {
-      if (pin.length < 4) return setError('密码至少需要4位');
+      if (pin.length !== 4) return setError('请输入4位数字密码');
       setFirstPin(pin);
       setPin('');
       setMode('confirm');
@@ -130,7 +130,7 @@ const LoginScreen: React.FC = () => {
       <div className="mb-8 w-full max-w-[240px]">
         <h2 className="text-center mb-4 text-sm font-medium text-slate-600 dark:text-slate-400">{title}</h2>
         <div className="flex justify-center space-x-3 mb-2 h-6">
-          {[...Array(8)].map((_, i) => (
+          {[...Array(4)].map((_, i) => (
             <div
               key={i}
               className={`w-2.5 h-2.5 rounded-full border transition-all duration-200 ${
@@ -143,7 +143,7 @@ const LoginScreen: React.FC = () => {
         </div>
         {error && <p className="text-red-500 text-[10px] text-center h-4">{error}</p>}
         {mode === 'setup' && !error && (
-          <p className="text-amber-600 dark:text-amber-400 text-[10px] text-center h-4">密码遗忘后数据将无法恢复，请牢记</p>
+          <p className="text-amber-600 dark:text-amber-400 text-[10px] text-center h-4">密码遗忘后数据将无法恢复，请牢记这4位数字</p>
         )}
         {mode !== 'setup' && !error && <p className="h-4" />}
       </div>
